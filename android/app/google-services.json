@@ -1,0 +1,99 @@
+{
+  "project_info": {
+    "project_number": "195342938613",
+    "firebase_url": "https://sky-telehealth-default-rtdb.firebaseio.com",
+    "project_id": "sky-telehealth",
+    "storage_bucket": "sky-telehealth.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:195342938613:android:85ca8ad1cc0622a420f0bc",
+        "android_client_info": {
+          "package_name": "com.skytelehealth.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "195342938613-n9b7pn3fe2nsj81f7cg3l0auodbjm20f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.skytelehealth.app",
+            "certificate_hash": "35415dd4f6e019296af3dc4153ec24e99f6c101b"
+          }
+        },
+        {
+          "client_id": "195342938613-ovg3j0q4e3rbdh0oo2jupsgpjhjopq9p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQn_Jl5RTdxOr8W2MWNt1NghnAOgQznMQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "195342938613-ovg3j0q4e3rbdh0oo2jupsgpjhjopq9p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "195342938613-86rrrshsdec1suvpum3qarnuc98silfo.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "doctor.finder.videocalling"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:195342938613:android:e1ecc77a8f4572fb20f0bc",
+        "android_client_info": {
+          "package_name": "doctor.finder.videocalling"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "195342938613-aj261pqbcq3h9td84c7sk2uk7ckcl6kv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "doctor.finder.videocalling",
+            "certificate_hash": "b7f05db3f7e7ed990d29ba101ee212998a2bc03d"
+          }
+        },
+        {
+          "client_id": "195342938613-ovg3j0q4e3rbdh0oo2jupsgpjhjopq9p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQn_Jl5RTdxOr8W2MWNt1NghnAOgQznMQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "195342938613-ovg3j0q4e3rbdh0oo2jupsgpjhjopq9p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "195342938613-86rrrshsdec1suvpum3qarnuc98silfo.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "doctor.finder.videocalling"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

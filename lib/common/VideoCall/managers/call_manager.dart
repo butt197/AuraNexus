@@ -1,0 +1,799 @@
+import 'package:videocalling/common/screens/call_screen.dart';
+import 'package:videocalling/common/utils/app_imports.dart';
+import 'package:videocalling/common/utils/video_call_imports.dart';
+
+class CallManager with WidgetsBindingObserver {
+  bool _observerAdded = false;
+  static String TAG = "CallManager";
+
+  static CallManager get instance => _getInstance();
+  static CallManager? _instance;
+
+  static CallManager _getInstance() {
+    return _instance ??= CallManager._internal();
+  }
+
+  factory CallManager() => _getInstance();
+
+  CallManager._internal();
+
+  P2PClient? _callClient;
+  P2PSession? _currentCall;
+  BuildContext? context;
+  MediaStream? localMediaStream;
+  Map<int, MediaStream> remoteStreams = {};
+  Function(bool, String)? onMicMuted;
+  final Set<String> _acceptedSessionIds = {};
+  final Set<String> _endedSessionIds = {};
+  bool _openingCallScreen = false;
+  bool _openingIncomingScreen = false;
+  final Set<String> _outgoingSessionIds = {};
+  bool _isCurrentCallOutgoing = false;
+
+  init(BuildContext context) {
+    this.context = context;
+
+    if (!_observerAdded) {
+      WidgetsBinding.instance.addObserver(this);
+      _observerAdded = true;
+    }
+
+    _initCustomMediaConfigs();
+
+    if (CubeChatConnection.instance.isAuthenticated()) {
+      _initCalls();
+    } else {
+      _initChatConnectionStateListener();
+    }
+
+    _initCallKit();
+  }
+
+  destroy() {
+    if (_observerAdded) {
+      WidgetsBinding.instance.removeObserver(this);
+      _observerAdded = false;
+    }
+
+    _callClient?.destroy();
+    _callClient = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    debugPrint("CALL_MANAGER_LIFECYCLE_CHANGED :: $state");
+
+    if (state != AppLifecycleState.resumed) return;
+
+    final call = _currentCall;
+
+    if (call == null) {
+      debugPrint("CALL_MANAGER_RESUME_NO_CURRENT_CALL");
+      return;
+    }
+
+    final String sessionId = call.sessionId;
+
+    debugPrint("CALL_MANAGER_RESUME_HAS_CALL :: $sessionId");
+    if (_outgoingSessionIds.contains(sessionId)) {
+      debugPrint("CALL_MANAGER_RESUME_OUTGOING_IGNORED :: $sessionId");
+      return;
+    }
+
+    Future.delayed(const Duration(milliseconds: 350), () async {
+      if (_currentCall == null) return;
+      if (_currentCall!.sessionId != sessionId) return;
+      if (_endedSessionIds.contains(sessionId)) return;
+      final int? currentUserId = CubeChatConnection.instance.currentUser?.id;
+
+      if (_isCurrentCallOutgoing || call.callerId == currentUserId) {
+        debugPrint(
+          "CALL_MANAGER_RESUME_SKIP_OUTGOING :: session=$sessionId caller=${call.callerId} self=$currentUserId route=${Get.currentRoute}",
+        );
+        return;
+      }
+
+      final String callState = await _getCallState(sessionId);
+
+      debugPrint(
+        "CALL_MANAGER_RESUME_STATE :: session=$sessionId, state=$callState, route=${Get.currentRoute}",
+      );
+
+      if (callState == CallState.ACCEPTED ||
+          _acceptedSessionIds.contains(sessionId)) {
+        debugPrint("CALL_MANAGER_RESUME_OPEN_CALL_SCREEN :: $sessionId");
+        _openConversationScreen(_currentCall!, true);
+        return;
+      }
+
+      if (Get.currentRoute == Routes.incomingCallScreen ||
+          Get.currentRoute == "/incoming-call-screen") {
+        debugPrint("CALL_MANAGER_RESUME_INCOMING_ALREADY_OPEN");
+        return;
+      }
+
+      if (Get.currentRoute.toLowerCase().contains("call")) {
+        debugPrint(
+          "CALL_MANAGER_RESUME_CALL_ROUTE_ALREADY_OPEN :: ${Get.currentRoute}",
+        );
+        return;
+      }
+
+      debugPrint("CALL_MANAGER_RESUME_OPEN_INCOMING :: $sessionId");
+
+      _openIncomingScreen(_currentCall!);
+    });
+  }
+
+  void _openIncomingScreen(P2PSession callSession) {
+    if (_openingIncomingScreen) {
+      debugPrint("CALL_MANAGER_OPEN_INCOMING_BLOCKED_BUSY");
+      return;
+    }
+
+    if (_acceptedSessionIds.contains(callSession.sessionId)) {
+      debugPrint(
+        "CALL_MANAGER_OPEN_INCOMING_BLOCKED_ACCEPTED :: ${callSession.sessionId}",
+      );
+      return;
+    }
+
+    if (Get.currentRoute == Routes.incomingCallScreen ||
+        Get.currentRoute == "/incoming-call-screen") {
+      debugPrint(
+        "CALL_MANAGER_OPEN_INCOMING_BLOCKED_ALREADY_OPEN :: ${callSession.sessionId}",
+      );
+      return;
+    }
+
+    _openingIncomingScreen = true;
+
+    try {
+      Get.toNamed(
+        Routes.incomingCallScreen,
+        arguments: {'callSession': callSession},
+      );
+
+      debugPrint(
+        "CALL_MANAGER_INCOMING_SCREEN_SENT :: ${callSession.sessionId}",
+      );
+    } catch (e) {
+      debugPrint("CALL_MANAGER_INCOMING_SCREEN_ERROR :: $e");
+    } finally {
+      Future.delayed(const Duration(milliseconds: 700), () {
+        _openingIncomingScreen = false;
+      });
+    }
+  }
+
+  void _openConversationScreen(P2PSession callSession, bool incoming) {
+    if (_openingCallScreen) {
+      debugPrint("CALL_MANAGER_OPEN_CALL_BLOCKED_BUSY");
+      return;
+    }
+
+    if (_endedSessionIds.contains(callSession.sessionId)) {
+      debugPrint(
+        "CALL_MANAGER_OPEN_CALL_BLOCKED_ENDED :: ${callSession.sessionId}",
+      );
+      return;
+    }
+
+    if (Get.currentRoute.toLowerCase().contains("call") &&
+        Get.currentRoute != Routes.incomingCallScreen &&
+        Get.currentRoute != "/incoming-call-screen") {
+      debugPrint(
+        "CALL_MANAGER_OPEN_CALL_BLOCKED_ALREADY_ON_CALL_ROUTE :: ${Get.currentRoute}",
+      );
+      return;
+    }
+
+    _openingCallScreen = true;
+
+    try {
+      if (Get.currentRoute == Routes.incomingCallScreen ||
+          Get.currentRoute == "/incoming-call-screen") {
+        Get.back();
+      }
+
+      Get.to(
+        () => ConversationCallScreen(callSession, incoming),
+        transition: Transition.cupertino,
+      );
+
+      debugPrint("CALL_MANAGER_CALL_SCREEN_SENT :: ${callSession.sessionId}");
+    } catch (e) {
+      debugPrint("CALL_MANAGER_CALL_SCREEN_ERROR :: $e");
+    } finally {
+      Future.delayed(const Duration(milliseconds: 900), () {
+        _openingCallScreen = false;
+      });
+    }
+  }
+
+  void _initCustomMediaConfigs() {
+    RTCMediaConfig mediaConfig = RTCMediaConfig.instance;
+    mediaConfig.minHeight = 340;
+    mediaConfig.minWidth = 480;
+    mediaConfig.minFrameRate = 25;
+
+    RTCConfig.instance.statsReportsInterval = 200;
+  }
+
+  void _initCalls() {
+    if (_callClient == null) {
+      _callClient = P2PClient.instance;
+
+      _callClient!.init();
+    }
+
+    _callClient!.onReceiveNewSession = (callSession) async {
+      final int? currentUserId = CubeChatConnection.instance.currentUser?.id;
+
+      if (currentUserId != null && callSession.callerId == currentUserId) {
+        debugPrint(
+          "CALL_MANAGER_SELF_INCOMING_IGNORED :: session=${callSession.sessionId}, user=$currentUserId",
+        );
+        return;
+      }
+      if (_currentCall != null &&
+          _currentCall!.sessionId != callSession.sessionId) {
+        callSession.reject();
+        return;
+      }
+      _currentCall = callSession;
+      _isCurrentCallOutgoing = false;
+
+      var callState = await _getCallState(_currentCall!.sessionId);
+
+      if (callState == CallState.REJECTED) {
+        reject(_currentCall!.sessionId, false);
+      } else if (callState == CallState.ACCEPTED) {
+        acceptCall(_currentCall!.sessionId, false);
+      } else if (callState == CallState.UNKNOWN ||
+          callState == CallState.PENDING) {
+        debugPrint(
+          "CALL_MANAGER_INCOMING_STATE_OPEN_UI :: session=${_currentCall!.sessionId}, state=$callState",
+        );
+
+        await _showIncomingCallScreen(_currentCall!);
+      }
+
+      _currentCall?.onLocalStreamReceived = (localStream) {
+        localMediaStream = localStream;
+      };
+
+      _currentCall?.onRemoteStreamReceived = (session, userId, stream) {
+        remoteStreams[userId] = stream;
+      };
+
+      _currentCall?.onRemoteStreamRemoved = (session, userId, stream) {
+        remoteStreams.remove(userId);
+      };
+    };
+
+    _callClient!.onSessionClosed = (callSession) async {
+      debugPrint("CALL_MANAGER_SESSION_CLOSED :: ${callSession.sessionId}");
+
+      _endedSessionIds.add(callSession.sessionId);
+      _acceptedSessionIds.remove(callSession.sessionId);
+      _outgoingSessionIds.remove(callSession.sessionId);
+
+      _clearCallIfMatches(callSession.sessionId);
+
+      CallKitManager.instance.processCallFinished(callSession.sessionId);
+    };
+  }
+
+  void startNewCall(
+    BuildContext context,
+    int callType,
+    Set<int> opponents,
+  ) async {
+    final int? currentUserId = CubeChatConnection.instance.currentUser?.id;
+
+    debugPrint("CALL_MANAGER_START_CURRENT_USER :: $currentUserId");
+    debugPrint("CALL_MANAGER_START_OPPONENTS_RAW :: $opponents");
+
+    if (_callClient == null) {
+      debugPrint("CALL_MANAGER_START_BLOCKED_CLIENT_NULL");
+      return;
+    }
+
+    if (currentUserId == null) {
+      debugPrint("CALL_MANAGER_START_BLOCKED_CURRENT_USER_NULL");
+      return;
+    }
+
+    final Set<int> cleanOpponents = opponents
+        .where((id) => id != 0 && id != currentUserId)
+        .toSet();
+
+    debugPrint("CALL_MANAGER_START_OPPONENTS_CLEAN :: $cleanOpponents");
+
+    if (cleanOpponents.isEmpty) {
+      debugPrint(
+        "CALL_MANAGER_START_BLOCKED_SELF_OR_EMPTY :: currentUser=$currentUserId raw=$opponents",
+      );
+      return;
+    }
+
+    if (_currentCall != null) {
+      debugPrint(
+        "CALL_MANAGER_START_BLOCKED_EXISTING_CALL :: ${_currentCall!.sessionId}",
+      );
+      return;
+    }
+
+    Helper.setAppleAudioIOMode(AppleAudioIOMode.localAndRemote);
+
+    final P2PSession callSession = _callClient!.createCallSession(
+      callType,
+      cleanOpponents,
+    );
+
+    _currentCall = callSession;
+    _isCurrentCallOutgoing = true;
+    _outgoingSessionIds.add(callSession.sessionId);
+    debugPrint("CALL_MANAGER_OUTGOING_MARKED :: ${callSession.sessionId}");
+
+    debugPrint(
+      "CALL_MANAGER_OUTGOING_SESSION_CREATED :: ${callSession.sessionId}",
+    );
+    debugPrint("CALL_MANAGER_OUTGOING_CALLER_ID :: ${callSession.callerId}");
+    debugPrint(
+      "CALL_MANAGER_OUTGOING_OPPONENTS :: ${callSession.opponentsIds}",
+    );
+
+    Get.to(
+      () => ConversationCallScreen(callSession, false),
+      transition: Transition.cupertino,
+    );
+
+    _sendStartCallSignalForOffliners(callSession);
+  }
+
+  String? _lastIncomingSessionId;
+
+  Future<void> _showIncomingCallScreen(P2PSession callSession) async {
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+
+    debugPrint("INCOMING_CALL_SESSION :: ${callSession.sessionId}");
+    debugPrint("INCOMING_CALL_LIFECYCLE :: $lifecycleState");
+    debugPrint("INCOMING_CALL_ROUTE :: ${Get.currentRoute}");
+    debugPrint(
+      "INCOMING_CALL_STORED_SESSION :: ${StorageService.readData(key: LocalStorageKeys.callSessionCS)}",
+    );
+
+    if (_lastIncomingSessionId == callSession.sessionId) {
+      debugPrint("INCOMING_CALL_DUPLICATE_IGNORED :: ${callSession.sessionId}");
+      return;
+    }
+
+    _lastIncomingSessionId = callSession.sessionId;
+
+    if (lifecycleState == AppLifecycleState.resumed) {
+      StorageService.removeData(key: LocalStorageKeys.callSessionCS);
+
+      debugPrint(
+        "INCOMING_CALL_OPEN_SCREEN_FOREGROUND :: ${callSession.sessionId}",
+      );
+
+      Future.delayed(const Duration(milliseconds: 100), () {
+        debugPrint(
+          "INCOMING_CALL_NAVIGATION_ATTEMPT :: ${callSession.sessionId}, route=${Get.currentRoute}",
+        );
+
+        _openIncomingScreen(callSession);
+      });
+
+      return;
+    }
+
+    /*
+    IMPORTANT:
+    App background/paused state me P2P listener bhi fire hota hai
+    aur Firebase background handler bhi fire hota hai.
+
+    Real CallKit notification sirf myBackgroundMessageHandler()
+    / showRealIncomingCallNotificationFromData() se show hogi.
+
+    Yahan showCallNotification() call nahi karni.
+    Warna same session ke liye duplicate native CallKit state ban jati hai,
+    jis se first call ke baad notification suppress ho sakti hai.
+  */
+
+    try {
+      StorageService.writeStringData(
+        key: LocalStorageKeys.callSessionCS,
+        value: callSession.sessionId,
+      );
+
+      debugPrint(
+        "INCOMING_CALL_BACKGROUND_SESSION_STORED_ONLY :: ${callSession.sessionId}",
+      );
+    } catch (e) {
+      debugPrint("INCOMING_CALL_BACKGROUND_SESSION_STORE_ERROR :: $e");
+    }
+
+    debugPrint(
+      "INCOMING_CALL_BACKGROUND_NOTIFICATION_SKIPPED_BY_P2P_USE_FCM :: ${callSession.sessionId}",
+    );
+  }
+
+  void acceptCall(String sessionId, bool fromCallkit) {
+    log('acceptCall, from callKit: $fromCallkit, sessionId: $sessionId', TAG);
+
+    debugPrint(
+      "CALL_MANAGER_ACCEPT_REQUEST :: $sessionId fromCallkit=$fromCallkit",
+    );
+
+    _isCurrentCallOutgoing = false;
+    _acceptedSessionIds.add(sessionId);
+    StorageService.removeData(key: LocalStorageKeys.callSessionCS);
+    ConnectycubeFlutterCallKit.setOnLockScreenVisibility(isVisible: false);
+
+    if (!fromCallkit) {
+      try {
+        ConnectycubeFlutterCallKit.reportCallAccepted(sessionId: sessionId);
+      } catch (e) {
+        log('reportCallAccepted error: $e', TAG);
+      }
+    }
+
+    if (_currentCall == null) {
+      debugPrint("ACCEPT_CALL_WAITING_FOR_P2P_SESSION :: $sessionId");
+      StorageService.writeStringData(
+        key: LocalStorageKeys.callSessionCS,
+        value: sessionId,
+      );
+      return;
+    }
+
+    if (_currentCall!.sessionId != sessionId) {
+      debugPrint(
+        "ACCEPT_CALL_SESSION_MISMATCH :: current=${_currentCall!.sessionId}, accepted=$sessionId",
+      );
+      return;
+    }
+
+    try {
+      _currentCall!.acceptCall();
+      debugPrint("P2P_CALL_ACCEPTED :: $sessionId");
+    } catch (e) {
+      debugPrint("P2P_CALL_ACCEPT_ERROR :: $e");
+    }
+
+    _openConversationScreen(_currentCall!, true);
+
+    Helper.setAppleAudioIOMode(AppleAudioIOMode.localAndRemote);
+  }
+
+  void reject(String sessionId, bool fromCallkit) {
+    debugPrint(
+      "CALL_MANAGER_REJECT_REQUEST :: $sessionId fromCallkit=$fromCallkit",
+    );
+
+    if (_endedSessionIds.contains(sessionId)) {
+      debugPrint("CALL_MANAGER_REJECT_DUPLICATE_IGNORED :: $sessionId");
+      return;
+    }
+
+    _endedSessionIds.add(sessionId);
+    _acceptedSessionIds.remove(sessionId);
+
+    StorageService.removeData(key: LocalStorageKeys.callSessionCS);
+    ConnectycubeFlutterCallKit.setOnLockScreenVisibility(isVisible: false);
+
+    if (_currentCall != null && _currentCall!.sessionId == sessionId) {
+      try {
+        if (!fromCallkit) {
+          CallKitManager.instance.processCallFinished(_currentCall!.sessionId);
+        }
+
+        _currentCall!.reject();
+        _sendEndCallSignalForOffliners(_currentCall);
+      } catch (e) {
+        debugPrint("CALL_MANAGER_REJECT_ERROR :: $e");
+      }
+    }
+
+    _clearCallIfMatches(sessionId);
+  }
+
+  Future<void> _disposeStreams() async {
+    try {
+      final tracks = localMediaStream?.getTracks() ?? [];
+      for (final track in tracks) {
+        await track.stop();
+      }
+      await localMediaStream?.dispose();
+    } catch (e) {
+      debugPrint("CALL_MANAGER_LOCAL_STREAM_DISPOSE_ERROR :: $e");
+    }
+
+    localMediaStream = null;
+
+    try {
+      for (final stream in remoteStreams.values) {
+        await stream.dispose();
+      }
+    } catch (e) {
+      debugPrint("CALL_MANAGER_REMOTE_STREAM_DISPOSE_ERROR :: $e");
+    }
+
+    remoteStreams.clear();
+  }
+
+  void _clearCurrentCall(String sessionId) {
+    debugPrint("CALL_MANAGER_CLEAR_CURRENT_CALL :: $sessionId");
+
+    if (_currentCall?.sessionId == sessionId) {
+      _currentCall = null;
+    }
+
+    _lastIncomingSessionId = null;
+
+    _disposeStreams();
+
+    try {
+      ConnectycubeFlutterCallKit.reportCallEnded(sessionId: sessionId);
+    } catch (_) {}
+
+    ConnectycubeFlutterCallKit.setOnLockScreenVisibility(isVisible: false);
+  }
+
+  void hungUp() {
+    final call = _currentCall;
+
+    if (call == null) {
+      debugPrint("CALL_MANAGER_HANGUP_NO_CURRENT_CALL");
+      return;
+    }
+
+    final String sessionId = call.sessionId;
+
+    debugPrint("CALL_MANAGER_HANGUP_REQUEST :: $sessionId");
+
+    _endedSessionIds.add(sessionId);
+    _acceptedSessionIds.remove(sessionId);
+
+    StorageService.removeData(key: LocalStorageKeys.callSessionCS);
+    ConnectycubeFlutterCallKit.setOnLockScreenVisibility(isVisible: false);
+
+    try {
+      CallKitManager.instance.processCallFinished(sessionId);
+    } catch (e) {
+      debugPrint("CALL_MANAGER_PROCESS_FINISHED_ERROR :: $e");
+    }
+
+    try {
+      call.hungUp();
+    } catch (e) {
+      debugPrint("CALL_MANAGER_HANGUP_ERROR :: $e");
+    }
+
+    _sendEndCallSignalForOffliners(call);
+    _clearCallIfMatches(sessionId);
+  }
+
+  void _clearCallIfMatches(String sessionId) {
+    _outgoingSessionIds.remove(sessionId);
+    if (_currentCall == null || _currentCall!.sessionId != sessionId) return;
+
+    debugPrint("CALL_MANAGER_CLEAR_CURRENT_CALL :: $sessionId");
+
+    _lastIncomingSessionId = null;
+    _currentCall = null;
+    _isCurrentCallOutgoing = false;
+
+    localMediaStream?.getTracks().forEach((track) async {
+      await track.stop();
+    });
+
+    localMediaStream?.dispose();
+    localMediaStream = null;
+
+    remoteStreams.forEach((key, value) async {
+      await value.dispose();
+    });
+
+    remoteStreams.clear();
+  }
+
+  CreateEventParams _getCallEventParameters(P2PSession currentCall) {
+    final String sessionId = currentCall.sessionId.toString();
+    final String callType = currentCall.callType.toString();
+    final String callerId = currentCall.callerId.toString();
+    final String callerName =
+        StorageService.readData(key: LocalStorageKeys.name)?.toString() ??
+        "Name";
+    final String callerImage =
+        StorageService.readData(
+          key: LocalStorageKeys.callerImage,
+        )?.toString() ??
+        ("${Apis.userImagePath}profile.png");
+    final String opponents = currentCall.opponentsIds.join(',');
+
+    CreateEventParams params = CreateEventParams();
+
+    params.parameters = {
+      'message':
+          "Incoming ${currentCall.callType == CallType.VIDEO_CALL ? "Video" : "Audio"} call",
+
+      PARAM_CALL_TYPE: currentCall.callType.toString(),
+      PARAM_SESSION_ID: currentCall.sessionId,
+      PARAM_CALLER_ID: currentCall.callerId.toString(),
+      PARAM_CALLER_NAME:
+          StorageService.readData(key: LocalStorageKeys.name) ?? "Name",
+      PARAM_CALLER_IMAGE: (() {
+        final image = StorageService.readData(
+          key: LocalStorageKeys.callerImage,
+        );
+
+        if (image != null &&
+            image.toString().trim().isNotEmpty &&
+            (image.toString().startsWith('http://') ||
+                image.toString().startsWith('https://'))) {
+          return image.toString();
+        }
+
+        return '';
+      })(),
+      PARAM_CALL_OPPONENTS: currentCall.opponentsIds.join(','),
+
+      // Duplicate keys for Android/ConnectyCube receiver compatibility
+      'signal_type': SIGNAL_TYPE_START_CALL,
+      'signalType': SIGNAL_TYPE_START_CALL,
+      'session_id': currentCall.sessionId,
+      'sessionId': currentCall.sessionId,
+      'callId': currentCall.sessionId,
+      'call_id': currentCall.sessionId,
+      'call_type': currentCall.callType.toString(),
+      'callType': currentCall.callType.toString(),
+      'caller_id': currentCall.callerId.toString(),
+      'callerId': currentCall.callerId.toString(),
+      'caller_name':
+          StorageService.readData(key: LocalStorageKeys.name) ?? "Name",
+      'callerName':
+          StorageService.readData(key: LocalStorageKeys.name) ?? "Name",
+      'caller_image':
+          StorageService.readData(key: LocalStorageKeys.callerImage) ??
+          ("${Apis.userImagePath}profile.png"),
+      'call_opponents': currentCall.opponentsIds.join(','),
+      'opponentsIds': currentCall.opponentsIds.join(','),
+    };
+
+    params.notificationType = NotificationType.PUSH;
+    params.environment = CubeEnvironment.DEVELOPMENT;
+    final int? selfCubeId = CubeChatConnection.instance.currentUser?.id;
+
+    final List<int> pushRecipients = currentCall.opponentsIds
+        .where((id) => id != null && id != selfCubeId)
+        .toSet()
+        .toList();
+
+    debugPrint("CALL_PUSH_SELF_ID :: $selfCubeId");
+    debugPrint("CALL_PUSH_RECIPIENTS_FINAL :: $pushRecipients");
+
+    if (pushRecipients.isEmpty) {
+      debugPrint(
+        "CALL_PUSH_ABORT_EMPTY_RECIPIENTS :: ${currentCall.sessionId}",
+      );
+    } else {
+      params.usersIds = pushRecipients;
+    }
+    return params;
+  }
+
+  void _sendStartCallSignalForOffliners(P2PSession currentCall) {
+    CreateEventParams params = _getCallEventParameters(currentCall);
+
+    params.parameters[PARAM_SIGNAL_TYPE] = SIGNAL_TYPE_START_CALL;
+    params.parameters['signal_type'] = SIGNAL_TYPE_START_CALL;
+    params.parameters['signalType'] = SIGNAL_TYPE_START_CALL;
+
+    debugPrint("CALL_PUSH_START_SESSION_ID :: ${currentCall.sessionId}");
+    debugPrint("CALL_PUSH_START_CALL_TYPE :: ${currentCall.callType}");
+    debugPrint("CALL_PUSH_START_CALLER_ID :: ${currentCall.callerId}");
+    debugPrint("CALL_PUSH_START_OPPONENTS :: ${currentCall.opponentsIds}");
+    debugPrint("CALL_PUSH_START_PARAMS :: ${params.parameters}");
+
+    if (params.usersIds == null || params.usersIds!.isEmpty) {
+      debugPrint(
+        "CALL_PUSH_NOT_SENT_NO_RECIPIENTS :: ${currentCall.sessionId}",
+      );
+      return;
+    }
+
+    createEvent(params.getEventForRequest())
+        .then((cubeEvent) {
+          debugPrint("CALL_PUSH_CREATE_EVENT_SUCCESS :: $cubeEvent");
+          log("Event for offliners created: $cubeEvent");
+        })
+        .catchError((error) {
+          debugPrint("CALL_PUSH_CREATE_EVENT_ERROR :: $error");
+          log("ERROR occurs during create event: $error");
+        });
+  }
+
+  void _sendEndCallSignalForOffliners(P2PSession? currentCall) {
+    if (currentCall == null) return;
+
+    CubeUser? currentUser = CubeChatConnection.instance.currentUser;
+    final int? selfCubeId = currentUser?.id;
+
+    final Set<int> recipients = {
+      ...currentCall.opponentsIds,
+      currentCall.callerId,
+    }.where((id) => id != selfCubeId).toSet();
+
+    if (recipients.isEmpty) {
+      debugPrint(
+        "CALL_END_PUSH_NOT_SENT_NO_RECIPIENTS :: ${currentCall.sessionId}",
+      );
+      return;
+    }
+
+    CreateEventParams params = _getCallEventParameters(currentCall);
+
+    params.parameters[PARAM_SIGNAL_TYPE] = SIGNAL_TYPE_END_CALL;
+    params.parameters['signal_type'] = SIGNAL_TYPE_END_CALL;
+    params.parameters['signalType'] = SIGNAL_TYPE_END_CALL;
+    params.parameters['session_id'] = currentCall.sessionId;
+    params.parameters['sessionId'] = currentCall.sessionId;
+    params.parameters['callId'] = currentCall.sessionId;
+    params.parameters['call_id'] = currentCall.sessionId;
+
+    params.usersIds = recipients.toList();
+
+    debugPrint("CALL_END_PUSH_SESSION_ID :: ${currentCall.sessionId}");
+    debugPrint("CALL_END_PUSH_RECIPIENTS :: ${params.usersIds}");
+
+    createEvent(params.getEventForRequest())
+        .then((cubeEvent) {
+          debugPrint("CALL_END_PUSH_CREATE_EVENT_SUCCESS :: $cubeEvent");
+        })
+        .catchError((error) {
+          debugPrint("CALL_END_PUSH_CREATE_EVENT_ERROR :: $error");
+        });
+  }
+
+  void _initCallKit() {
+    CallKitManager.instance.init(
+      onCallAccepted: (uuid) {
+        acceptCall(uuid, true);
+      },
+      onCallEnded: (uuid) {
+        reject(uuid, true);
+      },
+      onMuteCall: (mute, uuid) {
+        onMicMuted?.call(mute, uuid);
+      },
+    );
+  }
+
+  void _initChatConnectionStateListener() {
+    CubeChatConnection.instance.connectionStateStream.listen((state) {
+      if (CubeChatConnectionState.Ready == state) {
+        _initCalls();
+      }
+    });
+  }
+
+  Future<String> _getCallState(String sessionId) async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      var callState = ConnectycubeFlutterCallKit.getCallState(
+        sessionId: sessionId,
+      );
+      return callState;
+    }
+
+    return Future.value(CallState.UNKNOWN);
+  }
+
+  void muteCall(String sessionId, bool mute) {
+    CallKitManager.instance.muteCall(sessionId, mute);
+  }
+}
+
