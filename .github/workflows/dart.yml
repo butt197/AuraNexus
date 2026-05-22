@@ -1,43 +1,38 @@
-name: iOS-ipa-build
+name: iOS IPA Build
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # allows manual trigger
 
 jobs:
-  build-ios:
-    name: 🎉 iOS Build
+  build_ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          architecture: x64
-      - run: flutter pub get
-      
+          flutter-version: '3.41.9' # or your Flutter stable version
 
-      - run: pod repo update
-        working-directory: ios
+      - name: Install dependencies
+        run: |
+          flutter pub get
 
-      - run: flutter build ios --release --no-codesign
+      - name: Pre-build for iOS
+        run: |
+          flutter clean
+          flutter precache --ios
 
-      - run: mkdir Payload
-        working-directory: build/ios/iphoneos
+      - name: Build IPA
+        env:
+          FLUTTER_BUILD_NAME: 1.0.0
+          FLUTTER_BUILD_NUMBER: 1
+        run: |
+          flutter build ipa --release --no-codesign
 
-      - run: mv Runner.app/ Payload
-        working-directory: build/ios/iphoneos
-
-      - name: Zip output
-        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
-        working-directory: build/ios/iphoneos
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v3
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/ios/iphoneos/FlutterIpaExport.ipa
-          tag: v1.0
-          overwrite: true
-          body: "This is first release"
-
+          name: ios-ipa
+          path: build/ios/ipa/*.ipa
