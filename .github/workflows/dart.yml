@@ -1,11 +1,12 @@
 name: iOS IPA Build
 
 on:
-  workflow_dispatch: # allows manual trigger
+  workflow_dispatch: # Allows manual trigger from GitHub
 
 jobs:
   build_ios:
     runs-on: macos-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -13,41 +14,33 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.7' # or your Flutter stable version
+          flutter-version: '3.41.9'
 
       - name: Install dependencies
-        run: |
-          flutter pub get
+        run: flutter pub get
 
-      - name: Pre-build for iOS
+      - name: Pre-Build Flutter for iOS
         run: |
           flutter clean
           flutter precache --ios
 
-      -name: Build IPA
-  env:
-    APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
-    APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
-    APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
-    APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-  run: |
-    # Decode the base64 API key if you stored it as text
-    echo "$APP_STORE_CONNECT_KEY" > AuthKey.p8
+      - name: Install CocoaPods
+        run: |
+          cd ios || exit 1
+          pod repo update
+          pod install --verbose
+          cd ..
 
-    # Build the IPA and sign it
-    flutter build ipa \
-      --release \
-      --export-method app-store \
-      --build-number 1 \
-      --build-name 1.0.0 \
-      --no-codesign
-
-    # Use altool to upload or validate (optional)
-    xcrun altool --upload-app \
-      -f build/ios/ipa/Runner.ipa \
-      -t ios \
-      -u "<YOUR_APPLE_ID_EMAIL>" \
-      -p "@env:APP_SPECIFIC_PASSWORD"
+      - name: Build IPA with Signing
+        env:
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "$APP_STORE_CONNECT_KEY" > AuthKey.p8
+          flutter build ipa --release --export-method app-store \
+            --build-name 1.0.0 --build-number 1 --no-codesign
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v3
