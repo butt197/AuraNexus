@@ -24,12 +24,30 @@ jobs:
           flutter clean
           flutter precache --ios
 
-      - name: Build IPA
-        env:
-          FLUTTER_BUILD_NAME: 1.0.0
-          FLUTTER_BUILD_NUMBER: 1
-        run: |
-          flutter build ipa --release --no-codesign
+      -name: Build IPA
+  env:
+    APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+    APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+    APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+    APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  run: |
+    # Decode the base64 API key if you stored it as text
+    echo "$APP_STORE_CONNECT_KEY" > AuthKey.p8
+
+    # Build the IPA and sign it
+    flutter build ipa \
+      --release \
+      --export-method app-store \
+      --build-number 1 \
+      --build-name 1.0.0 \
+      --no-codesign
+
+    # Use altool to upload or validate (optional)
+    xcrun altool --upload-app \
+      -f build/ios/ipa/Runner.ipa \
+      -t ios \
+      -u "<YOUR_APPLE_ID_EMAIL>" \
+      -p "@env:APP_SPECIFIC_PASSWORD"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v3
