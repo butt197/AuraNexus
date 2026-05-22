@@ -1,0 +1,12 @@
+platform :ios, '12.0'
+
+use_frameworks!
+use_modular_headers!
+
+target 'Runner' do
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # Optional: plugin-specific pods (usually handled automatically)
+  # pod 'Stripe', '~> 23.0.0'
+  # pod 'FlutterUploader', :path => '.symlinks/plugins/flutter_uploader/ios'
+end
