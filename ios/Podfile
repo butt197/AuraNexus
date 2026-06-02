@@ -43,18 +43,21 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
-      # Keep all pods on same iOS target.
+      # Keep iOS deployment target aligned with app.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
 
-      # Firebase old plugin compatibility with framework modules.
+      # Required for older Firebase FlutterFire pods with static frameworks.
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
 
-      # gRPC / Xcode 16.x compatibility.
-      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
-      config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+      # Fix latest Xcode/Codemagic C++ parser issue with old gRPC-Core.
+      if ['gRPC-Core', 'gRPC-C++', 'BoringSSL-GRPC'].include?(target.name)
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['GCC_C_LANGUAGE_STANDARD'] = 'gnu11'
+      end
     end
 
-    # Fix Xcode 16 / BoringSSL-GRPC invalid -G compiler flag issue.
+    # Fix Xcode 16+/latest Codemagic invalid -G compiler flag issue.
     if target.name == 'BoringSSL-GRPC'
       target.source_build_phase.files.each do |file|
         next unless file.settings && file.settings['COMPILER_FLAGS']
@@ -66,23 +69,19 @@ post_install do |installer|
     end
   end
 
-  # Fix gRPC-Core basic_seq.h parse issue on newer Xcode/Clang.
+  # Surgical compatibility patch for old gRPC-Core with latest Xcode parser.
   grpc_basic_seq = File.join(__dir__, 'Pods', 'gRPC-Core', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')
 
   if File.exist?(grpc_basic_seq)
     text = File.read(grpc_basic_seq)
 
     patched = text
-      .gsub('Traits::template CallSeqFactory', 'Traits::CallSeqFactory')
-      .gsub('Traits::template CallSeq', 'Traits::CallSeq')
+      .gsub('Traits::template CallSeqFactory(f)', 'Traits::CallSeqFactory(f)')
+      .gsub('Traits::template CallSeqFactory(std::move(f))', 'Traits::CallSeqFactory(std::move(f))')
 
     if patched != text
       File.write(grpc_basic_seq, patched)
-      puts 'Patched gRPC-Core basic_seq.h for Xcode 16.x'
-    else
-      puts 'gRPC-Core basic_seq.h patch not needed or already applied'
+      puts 'Patched gRPC-Core basic_seq.h for latest Xcode compatibility.'
     end
-  else
-    puts 'gRPC-Core basic_seq.h not found during post_install'
   end
 end
