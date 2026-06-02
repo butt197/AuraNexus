@@ -43,28 +43,18 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
-      # Keep iOS target consistent across all pods.
+      # Keep all pods on same iOS target.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
 
-      # Required because older FlutterFire pods import Firebase umbrella headers.
+      # Firebase old plugin compatibility with framework modules.
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
 
-      # Fix gRPC-Core / BoringSSL C++ template parsing issues on newer Xcode.
+      # gRPC / Xcode 16.x compatibility.
       config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
       config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
-
-      # Avoid treating new Xcode warnings as hard failures inside old pods.
-      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-      config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-
-      # Keep old pods compatible with newer compiler strictness.
-      config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(inherited)']
-      unless config.build_settings['OTHER_CPLUSPLUSFLAGS'].include?('-Wno-error')
-        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-error'
-      end
     end
 
-    # Fix Xcode 16+ / BoringSSL-GRPC invalid -G compiler flag issue.
+    # Fix Xcode 16 / BoringSSL-GRPC invalid -G compiler flag issue.
     if target.name == 'BoringSSL-GRPC'
       target.source_build_phase.files.each do |file|
         next unless file.settings && file.settings['COMPILER_FLAGS']
@@ -74,17 +64,25 @@ post_install do |installer|
         file.settings['COMPILER_FLAGS'] = flags.join(' ')
       end
     end
+  end
 
-    # Fix Xcode 26 / gRPC-Core template keyword parsing issue.
-    if target.name == 'gRPC-Core' || target.name == 'gRPC-C++'
-      target.build_configurations.each do |config|
-        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
-        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
-        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-        config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(inherited)']
-        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-error'
-        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-c++20-extensions'
-      end
+  # Fix gRPC-Core basic_seq.h parse issue on newer Xcode/Clang.
+  grpc_basic_seq = File.join(__dir__, 'Pods', 'gRPC-Core', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')
+
+  if File.exist?(grpc_basic_seq)
+    text = File.read(grpc_basic_seq)
+
+    patched = text
+      .gsub('Traits::template CallSeqFactory', 'Traits::CallSeqFactory')
+      .gsub('Traits::template CallSeq', 'Traits::CallSeq')
+
+    if patched != text
+      File.write(grpc_basic_seq, patched)
+      puts 'Patched gRPC-Core basic_seq.h for Xcode 16.x'
+    else
+      puts 'gRPC-Core basic_seq.h patch not needed or already applied'
     end
+  else
+    puts 'gRPC-Core basic_seq.h not found during post_install'
   end
 end
