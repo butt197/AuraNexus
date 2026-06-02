@@ -1,0 +1,31 @@
+workflows:
+  ios-release:
+    name: iOS Release IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Disable Flutter Swift Package Manager
+        script: flutter config --no-enable-swift-package-manager
+
+      - name: Install pods
+        script: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS IPA
+        script: flutter build ipa --release --export-options-plist /Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
+      - /tmp/xcodebuild_logs/*.log
