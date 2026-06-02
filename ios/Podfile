@@ -20,6 +20,7 @@ def flutter_root
     matches = line.match(/FLUTTER_ROOT\=(.*)/)
     return matches[1].strip if matches
   end
+
   raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
 end
 
@@ -31,6 +32,7 @@ target 'Runner' do
   use_frameworks! :linkage => :static
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
@@ -40,19 +42,48 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
-    # Force all pods to use the app iOS deployment target.
     target.build_configurations.each do |config|
+      # Keep iOS target consistent across all pods.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+
+      # Required because older FlutterFire pods import Firebase umbrella headers.
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+
+      # Fix gRPC-Core / BoringSSL C++ template parsing issues on newer Xcode.
+      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
+      config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+
+      # Avoid treating new Xcode warnings as hard failures inside old pods.
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+
+      # Keep old pods compatible with newer compiler strictness.
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(inherited)']
+      unless config.build_settings['OTHER_CPLUSPLUSFLAGS'].include?('-Wno-error')
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-error'
+      end
     end
 
-    # Fix Xcode 16 / BoringSSL-GRPC invalid -G compiler flag issue.
+    # Fix Xcode 16+ / BoringSSL-GRPC invalid -G compiler flag issue.
     if target.name == 'BoringSSL-GRPC'
       target.source_build_phase.files.each do |file|
         next unless file.settings && file.settings['COMPILER_FLAGS']
+
         flags = file.settings['COMPILER_FLAGS'].split
         flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' || flag == '-G' }
         file.settings['COMPILER_FLAGS'] = flags.join(' ')
+      end
+    end
+
+    # Fix Xcode 26 / gRPC-Core template keyword parsing issue.
+    if target.name == 'gRPC-Core' || target.name == 'gRPC-C++'
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(inherited)']
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-error'
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-c++20-extensions'
       end
     end
   end
