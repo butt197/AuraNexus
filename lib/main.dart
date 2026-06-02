@@ -6,6 +6,7 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
+    debugPrint('Firebase Initialized');
     FirebaseMessaging.onBackgroundMessage(myBackgroundMessageHandler);
   } catch (e) {
     debugPrint('Firebase init failed: $e');

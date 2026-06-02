@@ -149,3 +149,18 @@ flutter:
     - family: SemiBold
       fonts:
         - asset: assets/fonts/Poppins-SemiBold.ttf
+
+dependency_overrides:
+  google_sign_in_ios: 5.8.0
+  carousel_slider:
+    path: local_patches/carousel_slider-4.2.1
+  flutter_html:
+    path: local_patches/flutter_html-3.0.0-alpha.2
+  firebase_messaging:
+    path: local_patches/firebase_messaging-14.7.10
+  firebase_database:
+    path: local_patches/firebase_database-10.5.7
+  firebase_auth:
+    path: local_patches/firebase_auth-4.16.0
+  cloud_firestore:
+    path: local_patches/cloud_firestore-4.17.5

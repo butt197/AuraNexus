@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>app-store</string>
+
+  <key>teamID</key>
+  <string>99AJ39PPQT</string>
+
+  <key>signingStyle</key>
+  <string>manual</string>
+
+  <key>signingCertificate</key>
+  <string>23891C788490E5EB0B8F5664C4AEDF0D4A4A431E</string>
+
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.skytelehealth.app</key>
+    <string>Test App ios_app_store 1779437251</string>
+  </dict>
+
+  <key>compileBitcode</key>
+  <false/>
+
+  <key>stripSwiftSymbols</key>
+  <true/>
+
+  <key>uploadSymbols</key>
+  <true/>
+</dict>
+</plist>

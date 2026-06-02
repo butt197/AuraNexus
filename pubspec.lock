@@ -92,10 +92,9 @@ packages:
   carousel_slider:
     dependency: "direct main"
     description:
-      name: carousel_slider
-      sha256: "9c695cc963bf1d04a47bd6021f68befce8970bcd61d24938e1fb0918cf5d9c42"
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/carousel_slider-4.2.1"
+      relative: true
+    source: path
     version: "4.2.1"
   change_app_package_name:
     dependency: "direct dev"
@@ -124,10 +123,9 @@ packages:
   cloud_firestore:
     dependency: "direct main"
     description:
-      name: cloud_firestore
-      sha256: a0f161b92610e078b4962d7e6ebeb66dc9cce0ada3514aeee442f68165d78185
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/cloud_firestore-4.17.5"
+      relative: true
+    source: path
     version: "4.17.5"
   cloud_firestore_platform_interface:
     dependency: transitive
@@ -364,10 +362,9 @@ packages:
   firebase_auth:
     dependency: "direct main"
     description:
-      name: firebase_auth
-      sha256: "279b2773ff61afd9763202cb5582e2b995ee57419d826b9af6517302a59b672f"
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/firebase_auth-4.16.0"
+      relative: true
+    source: path
     version: "4.16.0"
   firebase_auth_platform_interface:
     dependency: transitive
@@ -412,10 +409,9 @@ packages:
   firebase_database:
     dependency: "direct main"
     description:
-      name: firebase_database
-      sha256: "3b9ca306d26ad243ccbc4c717ff6e8563a080ebe11ee77fa7349b419c894b42d"
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/firebase_database-10.5.7"
+      relative: true
+    source: path
     version: "10.5.7"
   firebase_database_platform_interface:
     dependency: transitive
@@ -436,10 +432,9 @@ packages:
   firebase_messaging:
     dependency: "direct main"
     description:
-      name: firebase_messaging
-      sha256: "980259425fa5e2afc03e533f33723335731d21a56fd255611083bceebf4373a8"
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/firebase_messaging-14.7.10"
+      relative: true
+    source: path
     version: "14.7.10"
   firebase_messaging_platform_interface:
     dependency: transitive
@@ -481,10 +476,9 @@ packages:
   flutter_html:
     dependency: "direct main"
     description:
-      name: flutter_html
-      sha256: d8874e69bd9ea60ecb1a522ecd0830ba7ab3a8315d496d79810d2f651a5114fa
-      url: "https://pub.dev"
-    source: hosted
+      path: "local_patches/flutter_html-3.0.0-alpha.2"
+      relative: true
+    source: path
     version: "3.0.0-alpha.2"
   flutter_inappwebview:
     dependency: "direct main"
@@ -897,13 +891,13 @@ packages:
     source: hosted
     version: "6.2.1"
   google_sign_in_ios:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: google_sign_in_ios
-      sha256: "102005f498ce18442e7158f6791033bbc15ad2dcc0afa4cf4752e2722a516c96"
+      sha256: "8468465516a6fdc283ffbbb06ec03a860ee34e9ff84b0454074978705b42379b"
       url: "https://pub.dev"
     source: hosted
-    version: "5.9.0"
+    version: "5.8.0"
   google_sign_in_platform_interface:
     dependency: transitive
     description:
