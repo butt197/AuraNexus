@@ -38,23 +38,39 @@ target 'Runner' do
   end
 end
 
+def patch_grpc_basic_seq_template_issue
+  grpc_files = Dir.glob(File.join(__dir__, 'Pods', '{gRPC-Core,gRPC-C++}', 'src/core/lib/promise/detail/basic_seq.h'))
+
+  grpc_files.each do |file|
+    next unless File.exist?(file)
+
+    text = File.read(file)
+    fixed = text.gsub(
+      'Traits::template CallSeqFactory(',
+      'Traits::template CallSeqFactory<>('
+    )
+
+    if fixed != text
+      File.write(file, fixed)
+      puts "Patched gRPC Xcode template issue in: #{file}"
+    else
+      puts "gRPC template patch not needed/already applied in: #{file}"
+    end
+  end
+end
+
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
+    # Force all pods to use the app iOS deployment target and allow older Firebase plugin headers.
     target.build_configurations.each do |config|
-      # Keep iOS deployment target consistent.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-
-      # Required for older Firebase Flutter plugins with framework builds.
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-
-      # Reduce gRPC / C++ parser issues with newer Xcode.
-      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
-      config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
     end
 
-    # Fix Xcode / BoringSSL-GRPC invalid compiler flags.
+    # Fix Xcode 16+ / BoringSSL-GRPC invalid -G compiler flag issue.
     if target.name == 'BoringSSL-GRPC'
       target.source_build_phase.files.each do |file|
         next unless file.settings && file.settings['COMPILER_FLAGS']
@@ -66,25 +82,7 @@ post_install do |installer|
     end
   end
 
-  # Fix gRPC-Core parse issue on newer Xcode:
-  # basic_seq.h: A template argument list is expected after a name prefixed by the template keyword
-  grpc_basic_seq = File.join(installer.sandbox.root.to_s, 'gRPC-Core', 'src/core/lib/promise/detail/basic_seq.h')
-
-  if File.exist?(grpc_basic_seq)
-    text = File.read(grpc_basic_seq)
-
-    patched = text
-      .gsub('Traits::template CallSeqFactory(', 'Traits::CallSeqFactory(')
-      .gsub('Traits::template CallSeqFactory<', 'Traits::CallSeqFactory<')
-      .gsub(/Traits::template\s+CallSeqFactory/, 'Traits::CallSeqFactory')
-
-    if patched != text
-      File.write(grpc_basic_seq, patched)
-      puts 'Patched gRPC-Core basic_seq.h for newer Xcode template parsing.'
-    else
-      puts 'gRPC-Core basic_seq.h patch not needed or pattern not found.'
-    end
-  else
-    puts 'gRPC-Core basic_seq.h not found; skipping gRPC patch.'
-  end
+  # Fix Xcode 16.4/26.x gRPC-C++ parse error:
+  # "A template argument list is expected after a name prefixed by the template keyword"
+  patch_grpc_basic_seq_template_issue
 end
