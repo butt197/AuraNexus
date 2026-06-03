@@ -32,6 +32,9 @@ workflows:
       - name: Configure iOS code signing
         script: xcode-project use-profiles
 
+      - name: Set up code signing
+        script: xcode-project use-profiles  
+
       - name: Build iOS IPA
         script: flutter build ipa --release --export-options-plist /Users/builder/export_options.plist
 
