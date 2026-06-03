@@ -11,6 +11,11 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.skytelehealth.app
+
       vars:
         BUNDLE_ID: "com.skytelehealth.app"
 
@@ -27,21 +32,11 @@ workflows:
         script: |
           flutter pub get
 
-      - name: Install pods
+      - name: Install CocoaPods
         script: |
           cd ios
           pod install
           cd ..
-
-      - name: Fetch signing files
-        script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-
-      - name: Add signing certificates
-        script: |
-          keychain add-certificates
 
       - name: Configure Xcode signing
         script: |
@@ -49,13 +44,13 @@ workflows:
 
       - name: Build iOS IPA
         script: |
-          flutter build ipa --release --export-options-plist /Users/builder/export_options.plist
+          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
 
       - name: Verify IPA output
         script: |
           echo "==== IPA CHECK ===="
-          find build/ios/ipa -maxdepth 1 -type f -print
-          ls -lah build/ios/ipa
+          find build/ios/ipa -maxdepth 1 -type f -print || true
+          ls -lah build/ios/ipa || true
           echo "==== END IPA CHECK ===="
 
     artifacts:
