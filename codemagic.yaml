@@ -16,10 +16,16 @@ workflows:
 
     scripts:
       - name: Disable Flutter Swift Package Manager
-        script: flutter config --no-enable-swift-package-manager
+        script: |
+          flutter config --no-enable-swift-package-manager
+
+      - name: Clean Flutter build
+        script: |
+          flutter clean
 
       - name: Get Flutter packages
-        script: flutter pub get
+        script: |
+          flutter pub get
 
       - name: Install pods
         script: |
@@ -34,15 +40,33 @@ workflows:
             --create
 
       - name: Add signing certificates
-        script: keychain add-certificates
+        script: |
+          keychain add-certificates
 
       - name: Configure Xcode signing
-        script: xcode-project use-profiles
+        script: |
+          xcode-project use-profiles
 
       - name: Build iOS IPA
-        script: flutter build ipa --release --export-options-plist /Users/builder/export_options.plist
+        script: |
+          flutter build ipa --release --export-options-plist /Users/builder/export_options.plist
+
+      - name: Verify IPA output
+        script: |
+          echo "==== IPA CHECK ===="
+          find build/ios/ipa -maxdepth 1 -type f -print
+          ls -lah build/ios/ipa
+          echo "==== END IPA CHECK ===="
 
     artifacts:
       - build/ios/ipa/*.ipa
-      - build/ios/archive/*.xcarchive
+      - build/ios/ipa/*.plist
+      - build/ios/ipa/Packaging.log
       - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Client Testers
