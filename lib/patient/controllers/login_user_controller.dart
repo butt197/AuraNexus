@@ -1,4 +1,6 @@
-﻿import 'package:videocalling/common/utils/app_imports.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:videocalling/common/utils/app_imports.dart';
 import 'package:videocalling/common/utils/video_call_imports.dart';
 import 'package:videocalling/patient/utils/patient_imports.dart';
 
@@ -17,60 +19,88 @@ class UserLoginController extends GetxController {
   TextEditingController emailT = TextEditingController();
   TextEditingController passwordT = TextEditingController();
 
-  storeToken(type) async {
-    customDialog1(
-      s1: 'login_dialog_title'.tr,
-      s2: 'login_dialog_description'.tr,
-      s1style: Theme.of(Get.context!).textTheme.bodyLarge,
-      s2style: Theme.of(Get.context!).textTheme.bodyMedium,
-    );
-    if (token.value.isEmpty) {
+  Future<bool> storeToken(type) async {
+    if (token.value.trim().isEmpty) {
       await getToken();
     }
-    final response =
-        await post(
-          Uri.parse("${Apis.ServerAddress}/api/savetoken"),
-          body: {"token": token.value, "type": "1"},
-        ).catchError((e) {
-          messageDialog('error'.tr, 'unable_to_save_token'.tr);
-        });
 
-    if (response.statusCode == 200) {
-      final jsonResponse = jsonDecode(response.body);
-      if (jsonResponse['success'].toString() == "1") {
-        StorageService.writeBoolData(
-          key: LocalStorageKeys.isTokenExist,
-          value: true,
+    final currentToken = token.value.trim();
+
+    if (currentToken.isEmpty) {
+      debugPrint("PATIENT_LOGIN_TOKEN_SYNC_SKIPPED_NO_TOKEN");
+      return false;
+    }
+
+    try {
+      final response = await post(
+        Uri.parse("${Apis.ServerAddress}/api/savetoken"),
+        body: {"token": currentToken, "type": "1"},
+      ).timeout(const Duration(seconds: Apis.timeOut));
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "PATIENT_LOGIN_TOKEN_SYNC_HTTP_${response.statusCode}",
         );
-        StorageService.writeStringData(
-          key: LocalStorageKeys.token,
-          value: token.value,
-        );
-        Get.back();
-        loginInto(type);
-      } else {
-        Get.back();
-        messageDialog('error'.tr, "${jsonResponse['register']}");
+        return false;
       }
-    } else {
-      Get.back();
-      messageDialog('error'.tr, response.body.toString());
+
+      final jsonResponse = jsonDecode(response.body);
+
+      if (jsonResponse['success'].toString() != "1") {
+        debugPrint("PATIENT_LOGIN_TOKEN_SYNC_REJECTED");
+        return false;
+      }
+
+      StorageService.writeBoolData(
+        key: LocalStorageKeys.isTokenExist,
+        value: true,
+      );
+
+      StorageService.writeStringData(
+        key: LocalStorageKeys.token,
+        value: currentToken,
+      );
+
+      debugPrint("PATIENT_LOGIN_TOKEN_SYNC_OK");
+      return true;
+    } catch (e) {
+      debugPrint("PATIENT_LOGIN_TOKEN_SYNC_FAILED :: $e");
+      return false;
     }
   }
 
   getToken() async {
     if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null) {
-      firebaseMessaging
-          .getToken()
-          .then((value) {
-            if (value == null) return;
+      if (Platform.isIOS && kDebugMode) {
+        try {
+          final value = await firebaseMessaging.getToken();
+
+          if (value != null && value.isNotEmpty) {
             token.value = value;
-          })
-          .catchError((e) {
-            messageDialog('error'.tr, 'unable_to_save_token'.tr);
-          });
+            debugPrint("LOGIN_FCM_TOKEN_OK");
+            return;
+          }
+        } catch (e) {
+          debugPrint("LOGIN_FCM_TOKEN_FAILED :: $e");
+        }
+
+        token.value = "ios_simulator_test_token";
+        debugPrint("LOGIN_USING_IOS_SIMULATOR_TEST_TOKEN");
+        return;
+      }
+
+      try {
+        final value = await firebaseMessaging.getToken();
+
+        if (value != null && value.isNotEmpty) {
+          token.value = value;
+        }
+      } catch (e) {
+        debugPrint("PATIENT_LOGIN_FCM_TOKEN_FAILED :: $e");
+      }
     } else {
-      token.value = StorageService.readData(key: LocalStorageKeys.token);
+      token.value =
+          StorageService.readData(key: LocalStorageKeys.token) ?? "";
     }
   }
 
@@ -91,9 +121,13 @@ class UserLoginController extends GetxController {
       return;
     }
 
-    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null) {
+    if (token.value.isEmpty) {
+      await getToken();
+    }
+
+    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null &&
+        token.value.trim().isNotEmpty) {
       await storeToken(type);
-      return;
     }
 
     customDialog1(

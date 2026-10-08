@@ -118,45 +118,9 @@ class DoctorChooseYourPlanController extends GetxController {
                   ),
                 ),
                 CustomButton(
-                  onTap: () async {
-                    Get.back();
-
+                  onTap: () {
                     selectedPaymentMethod.value = 8;
-
-                    paymentIntent =
-                        await (String amount, String currency) async {
-                          Map<String, dynamic> body = {
-                            'amount': ((int.parse(amount)) * 100).toString(),
-                            'currency': currency,
-                            'payment_method_types[]': 'card',
-                          };
-
-                          var response = await http.post(
-                            Uri.parse(
-                              'https://api.stripe.com/v1/payment_intents',
-                            ),
-                            headers: {
-                              'Authorization': 'Bearer $stripeSecretKey',
-                              'Content-Type':
-                                  'application/x-www-form-urlencoded',
-                            },
-                            body: body,
-                          );
-
-                          return jsonDecode(response.body.toString());
-                        }(selectedAmount1.value.toString(), CURRENCY_CODE);
-
-                    http.Client().close();
-
-                    await Stripe.instance.initPaymentSheet(
-                      paymentSheetParameters: SetupPaymentSheetParameters(
-                        paymentIntentClientSecret:
-                            paymentIntent!['client_secret'],
-                        merchantDisplayName: 'Doctor Finder',
-                      ),
-                    );
-
-                    displayPaymentSheet();
+                    Get.back(result: true);
                   },
                   btnText: 'process_payment'.tr,
                 ),
@@ -168,15 +132,93 @@ class DoctorChooseYourPlanController extends GetxController {
     );
   }
 
+  Future<void> processStripePayment() async {
+    try {
+      debugPrint(
+        "STRIPE_CREATE_INTENT_START :: "
+        "amount=${selectedAmount1.value} :: "
+        "currency=$CURRENCY_CODE",
+      );
+
+      final Map<String, dynamic> body = {
+        'amount': (selectedAmount1.value * 100).toString(),
+        'currency': CURRENCY_CODE,
+        'payment_method_types[]': 'card',
+      };
+
+      final response = await http.post(
+        Uri.parse('https://api.stripe.com/v1/payment_intents'),
+        headers: {
+          'Authorization': 'Bearer $stripeSecretKey',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body,
+      );
+
+      debugPrint(
+        "STRIPE_CREATE_INTENT_STATUS :: ${response.statusCode}",
+      );
+
+      final decoded = jsonDecode(response.body);
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          decoded is! Map<String, dynamic> ||
+          decoded['client_secret'] == null) {
+        debugPrint(
+          "STRIPE_CREATE_INTENT_ERROR_BODY :: ${response.body}",
+        );
+
+        customDialog(
+          s1: 'fail'.tr,
+          s2: 'Unable to initialise Stripe payment.',
+        );
+        return;
+      }
+
+      paymentIntent = decoded;
+
+      debugPrint(
+        "STRIPE_PAYMENT_SHEET_INIT_START :: "
+        "${paymentIntent?['id']}",
+      );
+
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: paymentIntent!['client_secret'],
+          merchantDisplayName: 'Doctor Finder',
+        ),
+      );
+
+      debugPrint("STRIPE_PAYMENT_SHEET_INIT_DONE");
+
+      await displayPaymentSheet();
+    } catch (e) {
+      debugPrint("STRIPE_PAYMENT_PROCESS_EXCEPTION :: $e");
+
+      customDialog(
+        s1: 'fail'.tr,
+        s2: "${'fail_description'.tr}\n$e",
+      );
+    }
+  }
+
   Map<String, dynamic>? paymentIntent;
 
   displayPaymentSheet() async {
     try {
+      debugPrint("STRIPE_PAYMENT_SHEET_PRESENT_START");
+
       await Stripe.instance.presentPaymentSheet();
+
+      debugPrint("STRIPE_PAYMENT_SHEET_PRESENT_DONE");
+
       uploadRecipe(stripeToken: paymentIntent!['id']);
     } on StripeException catch (e) {
+      debugPrint("STRIPE_PAYMENT_SHEET_STRIPE_EXCEPTION :: $e");
       customDialog(s1: 'fail'.tr, s2: "${'fail_description'.tr}\n$e");
     } catch (e) {
+      debugPrint("STRIPE_PAYMENT_SHEET_EXCEPTION :: $e");
       customDialog(s1: 'fail'.tr, s2: "${'fail_description'.tr}\n$e");
     }
   }

@@ -19,6 +19,9 @@ class ForgetPasswordController extends GetxController {
         ),
       ).timeout(const Duration(seconds: Apis.timeOut));
 
+      debugPrint("FORGOT_PASSWORD_STATUS :: ${response.statusCode}");
+      debugPrint("FORGOT_PASSWORD_BODY :: ${response.body}");
+
       Get.back();
 
       if (response.statusCode != 200) {

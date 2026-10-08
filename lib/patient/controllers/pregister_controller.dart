@@ -1,4 +1,6 @@
-﻿import 'package:videocalling/common/utils/app_imports.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:videocalling/common/utils/app_imports.dart';
 import 'package:videocalling/common/utils/video_call_imports.dart';
 
 class RegisterPatientController extends GetxController {
@@ -54,17 +56,18 @@ class RegisterPatientController extends GetxController {
       return;
     }
 
-    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null) {
+    if (token.value.isEmpty) {
+      await getToken();
+    }
+
+    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null &&
+        token.value.trim().isNotEmpty) {
       await storeToken();
-      return;
     }
 
     customDialog1(s1: 'creating_account'.tr, s2: 'creating_account1'.tr);
 
     try {
-      if (token.value.isEmpty) {
-        await getToken();
-      }
 
       final String url = "${Apis.ServerAddress}/api/register";
 
@@ -182,41 +185,78 @@ class RegisterPatientController extends GetxController {
 
   getToken() async {
     if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null) {
-      firebaseMessaging.getToken().then((value) {
-        if (value == null) return;
-        token.value = value;
-      });
+      try {
+        final value = await firebaseMessaging.getToken();
+
+        if (value != null && value.isNotEmpty) {
+          token.value = value;
+          debugPrint("FCM_TOKEN_OK");
+          return;
+        }
+      } catch (e) {
+        debugPrint("FCM_TOKEN_FAILED :: $e");
+      }
+
+      if (Platform.isIOS && kDebugMode) {
+        token.value = "ios_simulator_test_token";
+        debugPrint("USING_IOS_SIMULATOR_TEST_TOKEN");
+      } else {
+        token.value = "";
+        debugPrint("FCM_TOKEN_UNAVAILABLE_CONTINUING_WITHOUT_TOKEN");
+      }
     } else {
-      token.value = StorageService.readData(key: LocalStorageKeys.token);
+      token.value =
+          StorageService.readData(key: LocalStorageKeys.token) ?? "";
     }
   }
 
-  storeToken() async {
-    customDialog1(s1: 'creating_account'.tr, s2: 'creating_account1'.tr);
-    if (token.value.isEmpty) {
+  Future<bool> storeToken() async {
+    if (token.value.trim().isEmpty) {
       await getToken();
     }
-    final response = await post(
-      Uri.parse("${Apis.ServerAddress}/api/savetoken"),
-      body: {"token": token.value, "type": "1"},
-    );
-    if (response.statusCode == 200) {
-      Get.back();
-      final jsonResponse = jsonDecode(response.body);
-      if (jsonResponse['success'].toString() == "1") {
-        StorageService.writeBoolData(
-          key: LocalStorageKeys.isTokenExist,
-          value: true,
+
+    final currentToken = token.value.trim();
+
+    if (currentToken.isEmpty) {
+      debugPrint("PATIENT_REGISTER_TOKEN_SYNC_SKIPPED_NO_TOKEN");
+      return false;
+    }
+
+    try {
+      final response = await post(
+        Uri.parse("${Apis.ServerAddress}/api/savetoken"),
+        body: {"token": currentToken, "type": "1"},
+      ).timeout(const Duration(seconds: Apis.timeOut));
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "PATIENT_REGISTER_TOKEN_SYNC_HTTP_${response.statusCode}",
         );
-        StorageService.writeStringData(
-          key: LocalStorageKeys.token,
-          value: token.value,
-        );
-        registerUser();
+        return false;
       }
-    } else {
-      Get.back();
-      customDialog(s1: 'error'.tr, s2: response.body.toString());
+
+      final jsonResponse = jsonDecode(response.body);
+
+      if (jsonResponse['success'].toString() != "1") {
+        debugPrint("PATIENT_REGISTER_TOKEN_SYNC_REJECTED");
+        return false;
+      }
+
+      StorageService.writeBoolData(
+        key: LocalStorageKeys.isTokenExist,
+        value: true,
+      );
+
+      StorageService.writeStringData(
+        key: LocalStorageKeys.token,
+        value: currentToken,
+      );
+
+      debugPrint("PATIENT_REGISTER_TOKEN_SYNC_OK");
+      return true;
+    } catch (e) {
+      debugPrint("PATIENT_REGISTER_TOKEN_SYNC_FAILED :: $e");
+      return false;
     }
   }
 

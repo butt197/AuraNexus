@@ -153,6 +153,8 @@ flutter:
         - asset: assets/fonts/Poppins-SemiBold.ttf
 
 dependency_overrides:
+  stripe_ios:
+    path: local_patches/stripe_ios-10.2.0
   google_sign_in_ios: 5.8.0
   carousel_slider:
     path: local_patches/carousel_slider-4.2.1

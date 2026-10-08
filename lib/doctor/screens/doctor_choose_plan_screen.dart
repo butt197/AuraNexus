@@ -481,8 +481,9 @@ class DoctorChooseYourPlanScreen
               ),
               const SizedBox(height: 20),
               GestureDetector(
-                onTap: () {
-                  choosePlanController.bottomSheet(
+                onTap: () async {
+                  final shouldProceed =
+                      await choosePlanController.bottomSheet(
                     choosePlanController
                         .getSubscriptionPlanClass!
                         .data!
@@ -490,6 +491,16 @@ class DoctorChooseYourPlanScreen
                     choosePlanController.selectedAmount1.value,
                     choosePlanController.selectedSubId.value,
                   );
+
+                  if (shouldProceed == true) {
+                    await WidgetsBinding.instance.endOfFrame;
+
+                    debugPrint(
+                      "STRIPE_PARENT_SCREEN_READY_TO_PRESENT",
+                    );
+
+                    await choosePlanController.processStripePayment();
+                  }
                 },
                 child: Container(
                   height: 60,

@@ -1,4 +1,4 @@
-﻿import 'package:videocalling/common/utils/app_imports.dart';
+import 'package:videocalling/common/utils/app_imports.dart';
 import 'package:videocalling/common/utils/video_call_imports.dart';
 
 class DoctorLoginController extends GetxController {
@@ -20,50 +20,75 @@ class DoctorLoginController extends GetxController {
       return;
     }
 
-    final fcmToken = await firebaseMessaging.getToken();
+    try {
+      final fcmToken = await firebaseMessaging.getToken();
 
-    if (fcmToken != null && fcmToken.isNotEmpty) {
-      token.value = fcmToken;
-      StorageService.writeStringData(
-        key: LocalStorageKeys.token,
-        value: fcmToken,
-      );
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        token.value = fcmToken;
+        StorageService.writeStringData(
+          key: LocalStorageKeys.token,
+          value: fcmToken,
+        );
+        debugPrint("DOCTOR_LOGIN_FCM_TOKEN_OK");
+        return;
+      }
+    } catch (e) {
+      debugPrint("DOCTOR_LOGIN_FCM_TOKEN_FAILED :: $e");
+    }
+
+    if (Platform.isIOS && kDebugMode) {
+      token.value = "ios_simulator_test_token";
+      debugPrint("DOCTOR_LOGIN_USING_IOS_SIMULATOR_TEST_TOKEN");
     }
   }
 
-  storeToken() async {
-    customDialog1(
-      s1: 'login_dialog_title'.tr,
-      s2: 'login_dialog_description'.tr,
-    );
-    if (token.value.isEmpty) {
+  Future<bool> storeToken() async {
+    if (token.value.trim().isEmpty) {
       await getToken();
     }
-    final response =
-        await post(
-          Uri.parse("${Apis.ServerAddress}/api/savetoken"),
-          body: {"token": token.value.trim(), "type": "1"},
-        ).timeout(const Duration(seconds: Apis.timeOut)).catchError((e) {
-          Get.back();
-          customDialog(s1: 'error'.tr, s2: 'unable_to_save_token'.tr);
-        });
-    if (response.statusCode == 200) {
-      Get.back();
-      final jsonResponse = jsonDecode(response.body);
-      if (jsonResponse['success'].toString() == "1") {
-        StorageService.writeBoolData(
-          key: LocalStorageKeys.isTokenExist,
-          value: true,
+
+    final currentToken = token.value.trim();
+
+    if (currentToken.isEmpty) {
+      debugPrint("DOCTOR_LOGIN_TOKEN_SYNC_SKIPPED_NO_TOKEN");
+      return false;
+    }
+
+    try {
+      final response = await post(
+        Uri.parse("${Apis.ServerAddress}/api/savetoken"),
+        body: {"token": currentToken, "type": "1"},
+      ).timeout(const Duration(seconds: Apis.timeOut));
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "DOCTOR_LOGIN_TOKEN_SYNC_HTTP_${response.statusCode}",
         );
-        StorageService.writeStringData(
-          key: LocalStorageKeys.token,
-          value: token.value,
-        );
-        loginInto();
+        return false;
       }
-    } else {
-      Get.back();
-      customDialog(s1: 'error'.tr, s2: response.body.toString());
+
+      final jsonResponse = jsonDecode(response.body);
+
+      if (jsonResponse['success'].toString() != "1") {
+        debugPrint("DOCTOR_LOGIN_TOKEN_SYNC_REJECTED");
+        return false;
+      }
+
+      StorageService.writeBoolData(
+        key: LocalStorageKeys.isTokenExist,
+        value: true,
+      );
+
+      StorageService.writeStringData(
+        key: LocalStorageKeys.token,
+        value: currentToken,
+      );
+
+      debugPrint("DOCTOR_LOGIN_TOKEN_SYNC_OK");
+      return true;
+    } catch (e) {
+      debugPrint("DOCTOR_LOGIN_TOKEN_SYNC_FAILED :: $e");
+      return false;
     }
   }
 
@@ -82,9 +107,13 @@ class DoctorLoginController extends GetxController {
       return;
     }
 
-    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null) {
+    if (token.value.isEmpty) {
+      await getToken();
+    }
+
+    if (StorageService.readData(key: LocalStorageKeys.isTokenExist) == null &&
+        token.value.trim().isNotEmpty) {
       await storeToken();
-      return;
     }
 
     customDialog1(
